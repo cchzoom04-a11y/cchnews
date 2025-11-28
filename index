@@ -436,7 +436,7 @@
 // =================================================================
 // ===== 設定區 =====
 // ！！！請在此貼上您的 Google Apps Script 網址！！！
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxMhVt5lirT9hc9br0HpdXklVRm8JBbm6DKVfJbDVqRihdGA_8A4kh42kBpC5zIByRv/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyhvS2XPcRJmAyu1ig2dFROfs3yBq3mpwkSeUn5_wmnzuE-0NUbpZvmu0S91t0qcz_C/exec";
 // =================================================================
 
 // 全域變數
