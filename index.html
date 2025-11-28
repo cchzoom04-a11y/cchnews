@@ -59,8 +59,12 @@
     border-color: var(--blue);
   }
 
+  /* --- 顏色主題樣式 (新增 Green) --- */
   .card.accent{border-color:var(--soft-red-line); background:var(--soft-red)}
   .card.purple{border-color:var(--soft-purple-line); background:var(--soft-purple)}
+  /* 新增：綠色卡片樣式 */
+  .card.green{border-color:var(--soft-green-line); background:var(--soft-green)}
+
   .date{
     padding-right:20px; border-right:2px solid var(--line);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -68,17 +72,27 @@
   }
   .date .label,.date .weekday{font-size:14px;color:var(--muted);letter-spacing:1px}
   .date .day{font-size:56px;font-weight:800;line-height:1}
+  
+  /* 日期顏色連動 */
   .card.accent .date .label,
   .card.accent .date .day,
   .card.accent .date .weekday{color:var(--accent)}
+  
   .card.purple .date .label,
   .card.purple .date .day,
   .card.purple .date .weekday{color:var(--purple)}
+
+  /* 新增：綠色日期文字顏色 */
+  .card.green .date .label,
+  .card.green .date .day,
+  .card.green .date .weekday{color:var(--green)}
   
   .content{display:flex; flex-direction: column; justify-content: center;}
   .content h2{margin:0; font-size:40px; line-height:1.15; font-weight:800}
   .content h2.red{color:var(--accent)}
   .content h2.purple{color:var(--purple)}
+  /* 新增：綠色標題顏色 */
+  .content h2.green{color:var(--green)}
   
   /* 備註樣式 */
   .content .note{
@@ -738,6 +752,10 @@ function renderNews() {
   scheduleAutoDelete();
   
   const today = new Date();
+  // 為了計算新增兩天內，將時間歸零
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0,0,0,0);
+  
   const sortedNews = [...newsData].sort((a, b) => {
     const dateA = new Date(a.date);
     const dateB = new Date(b.date);
@@ -775,7 +793,24 @@ function renderNews() {
     let cardClass = 'card';
     let titleClass = '';
     
-    if (isToday) {
+    // ===== 新增兩天內的判斷邏輯 =====
+    let isNewlyAdded = false;
+    if (news.createdDate) {
+      const createdDate = new Date(news.createdDate);
+      createdDate.setHours(0,0,0,0);
+      const diffTime = Math.abs(todayMidnight - createdDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1) {
+        isNewlyAdded = true;
+      }
+    }
+    // =============================
+    
+    // 設定樣式優先級：綠(新增) > 紅(今天) > 紫(重點)
+    if (isNewlyAdded) {
+        cardClass += ' green';
+        titleClass = 'green';
+    } else if (isToday) {
       cardClass += ' accent';
       titleClass = 'red';
     } else if (news.accent) {
@@ -1459,7 +1494,3 @@ document.head.appendChild(style);
 </script>
 </body>
 </html>
-
-
-
-
