@@ -465,6 +465,37 @@ let filteredHistory = [];
 // 月曆變數
 let calendarDate = new Date(); // 當前檢視的月份
 
+// --- 核心工具：取得當前本地日期 (YYYY-MM-DD) ---
+function getLocalDateString() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+// --- 核心工具：檢查是否為最近 (兩天內：今天或昨天) ---
+function checkIsRecent(dateStr) {
+    if (!dateStr) return false;
+    // 使用字串解析而非 Date 物件，避免時區問題
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return false;
+    
+    // 將紀錄的日期轉為當日午夜
+    const targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    
+    // 取得今天的午夜
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // 計算差距天數
+    const diffTime = today - targetDate;
+    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    
+    // 如果是 0 (今天) 或 1 (昨天)，則回傳 true
+    return diffDays >= 0 && diffDays <= 1;
+}
+
 // 控制載入中遮罩
 function showLoading(show) {
   const overlay = document.getElementById('loadingOverlay');
@@ -567,16 +598,12 @@ function renderCalendar() {
       event.className = 'calendar-event';
       
       // ===== 文字顏色邏輯 =====
-      // 1. 判斷是否為「新增兩天內」(最優先，綠色字)
+      // 1. 判斷是否為「新增或編輯兩天內」(最優先，綠色字)
       let isNewlyAdded = false;
-      if (news.createdDate) {
-        const createdDate = new Date(news.createdDate);
-        createdDate.setHours(0,0,0,0);
-        const diffTime = Math.abs(today - createdDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        if (diffDays <= 1) { 
-           isNewlyAdded = true;
-        }
+      
+      // 檢查 建立日期 OR 更新日期
+      if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
+         isNewlyAdded = true;
       }
 
       // 2. 判斷是否為「今天」(紅色字)
@@ -627,14 +654,11 @@ function renderCalendar() {
       const event = document.createElement('div');
       event.className = 'calendar-event';
       
-      // 未定日期的文字顏色邏輯 (綠 > 紫 > 黑) - 沒有「當日」的概念
+      // 未定日期的文字顏色邏輯 (綠 > 紫 > 黑)
       let isNewlyAdded = false;
-      if (news.createdDate) {
-        const createdDate = new Date(news.createdDate);
-        createdDate.setHours(0,0,0,0);
-        const diffTime = Math.abs(today - createdDate);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        if (diffDays <= 1) isNewlyAdded = true;
+
+      if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
+          isNewlyAdded = true;
       }
 
       if (isNewlyAdded) event.classList.add('text-green');
@@ -696,7 +720,7 @@ async function autoDeleteExpiredNews() {
     if (!exists) {
       historyData.push({
         ...news,
-        archivedDate: new Date().toISOString().split('T')[0]
+        archivedDate: getLocalDateString() // 使用新的本地日期函數
       });
     }
   });
@@ -752,9 +776,6 @@ function renderNews() {
   scheduleAutoDelete();
   
   const today = new Date();
-  // 為了計算新增兩天內，將時間歸零
-  const todayMidnight = new Date();
-  todayMidnight.setHours(0,0,0,0);
   
   const sortedNews = [...newsData].sort((a, b) => {
     const dateA = new Date(a.date);
@@ -793,20 +814,16 @@ function renderNews() {
     let cardClass = 'card';
     let titleClass = '';
     
-    // ===== 新增兩天內的判斷邏輯 =====
+    // ===== 綠色看板邏輯：新增 或 編輯 兩天內 =====
     let isNewlyAdded = false;
-    if (news.createdDate) {
-      const createdDate = new Date(news.createdDate);
-      createdDate.setHours(0,0,0,0);
-      const diffTime = Math.abs(todayMidnight - createdDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays <= 1) {
-        isNewlyAdded = true;
-      }
-    }
-    // =============================
     
-    // 設定樣式優先級：綠(新增) > 紅(今天) > 紫(重點)
+    // 檢查「建立日期」或「更新日期」，使用新的 checkIsRecent 函數
+    if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
+        isNewlyAdded = true;
+    }
+    // ==========================================
+    
+    // 設定樣式優先級：綠(新/更新) > 紅(今天) > 紫(重點)
     if (isNewlyAdded) {
         cardClass += ' green';
         titleClass = 'green';
@@ -952,26 +969,30 @@ async function saveNews() {
     return;
   }
   
-  // 如果是新增新聞，記錄今天的日期作為 createdDate
-  // 如果是編輯，保留原有的 createdDate (從 newsData 中查找)
-  let createdDate = '';
+  // 取得當前本地日期字串 YYYY-MM-DD
+  const currentDateStr = getLocalDateString();
   
   if (editingId) {
-    // 編輯模式：保留原有的建立日期
+    // 編輯模式：
     const index = newsData.findIndex(n => n.id == editingId);
     const originalNews = newsData[index];
-    createdDate = originalNews.createdDate || ''; // 如果原本沒有，就留空
+    const createdDate = originalNews.createdDate || ''; // 如果原本沒有，就留空
+    // 關鍵修正：確實將今天的日期寫入 updatedDate
+    const updatedDate = currentDateStr; 
     
     newsData[index] = {
       id: editingId,
-      date, title, note, editor, video, graphic, accent, createdDate
+      date, title, note, editor, video, graphic, accent, 
+      createdDate, 
+      updatedDate // 儲存更新日期
     };
     showNotification('✅ 新聞更新成功！', 'success');
   } else {
-    // 新增模式：記錄今天
+    // 新增模式：
     const maxId = newsData.length > 0 ? Math.max(...newsData.map(n => Number(n.id) || 0)) : 0;
     const newId = maxId + 1;
-    createdDate = new Date().toISOString().split('T')[0]; // 格式: YYYY-MM-DD
+    // 關鍵修正：使用本地日期作為建立日期
+    const createdDate = currentDateStr; 
     
     newsData.push({
       id: newId,
@@ -997,7 +1018,7 @@ function deleteNews() {
       if (!exists) {
         historyData.push({
           ...newsToDelete,
-          archivedDate: new Date().toISOString().split('T')[0]
+          archivedDate: getLocalDateString()
         });
       }
       
@@ -1200,7 +1221,7 @@ function downloadHistoryExcel() {
   const keyword = document.getElementById('searchKeyword').value.trim();
   
   let fileName = '新聞歷史紀錄';
-  const currentDate = new Date().toISOString().split('T')[0];
+  const currentDate = getLocalDateString();
   
   if (year || month || keyword) fileName += '_篩選結果';
   fileName += `_${currentDate}.xlsx`;
@@ -1494,4 +1515,3 @@ document.head.appendChild(style);
 </script>
 </body>
 </html>
-
