@@ -465,46 +465,6 @@ let filteredHistory = [];
 // 月曆變數
 let calendarDate = new Date(); // 當前檢視的月份
 
-// --- 核心工具：取得當前本地日期 (YYYY-MM-DD) ---
-function getLocalDateString() {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-}
-
-// --- 修正核心工具：檢查是否為最近 (兩天內：今天或昨天) ---
-// 修改：移除時間物件計算，改用絕對日期比較，解決伺服器/本地端時區導致的誤差
-function checkIsRecent(dateStr) {
-    if (!dateStr) return false;
-    
-    // 容錯處理：如果資料庫存的是完整的 ISO 時間字串 (例如 2024-05-20T10:00:00.000Z)
-    // 我們只取前 10 碼 (YYYY-MM-DD)
-    const cleanDateStr = dateStr.substring(0, 10);
-    
-    // 解析目標日期
-    const parts = cleanDateStr.split('-');
-    if (parts.length !== 3) return false;
-    
-    // 建構目標日期 (本地時間午夜)
-    const targetYear = parseInt(parts[0], 10);
-    const targetMonth = parseInt(parts[1], 10) - 1; // JS月份從0開始
-    const targetDay = parseInt(parts[2], 10);
-    const targetDate = new Date(targetYear, targetMonth, targetDay);
-
-    // 建構今天日期 (本地時間午夜)
-    const now = new Date();
-    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    // 計算差距天數 (毫秒相減 / 一天的毫秒數)
-    const diffTime = todayDate.getTime() - targetDate.getTime();
-    const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
-    
-    // 邏輯：0 = 今天, 1 = 昨天。
-    return diffDays >= 0 && diffDays <= 1;
-}
-
 // 控制載入中遮罩
 function showLoading(show) {
   const overlay = document.getElementById('loadingOverlay');
@@ -607,12 +567,16 @@ function renderCalendar() {
       event.className = 'calendar-event';
       
       // ===== 文字顏色邏輯 =====
-      // 1. 判斷是否為「新增或編輯兩天內」(最優先，綠色字)
+      // 1. 判斷是否為「新增兩天內」(最優先，綠色字)
       let isNewlyAdded = false;
-      
-      // 檢查 建立日期 OR 更新日期
-      if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
-         isNewlyAdded = true;
+      if (news.createdDate) {
+        const createdDate = new Date(news.createdDate);
+        createdDate.setHours(0,0,0,0);
+        const diffTime = Math.abs(today - createdDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 1) { 
+           isNewlyAdded = true;
+        }
       }
 
       // 2. 判斷是否為「今天」(紅色字)
@@ -663,11 +627,14 @@ function renderCalendar() {
       const event = document.createElement('div');
       event.className = 'calendar-event';
       
-      // 未定日期的文字顏色邏輯 (綠 > 紫 > 黑)
+      // 未定日期的文字顏色邏輯 (綠 > 紫 > 黑) - 沒有「當日」的概念
       let isNewlyAdded = false;
-
-      if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
-          isNewlyAdded = true;
+      if (news.createdDate) {
+        const createdDate = new Date(news.createdDate);
+        createdDate.setHours(0,0,0,0);
+        const diffTime = Math.abs(today - createdDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        if (diffDays <= 1) isNewlyAdded = true;
       }
 
       if (isNewlyAdded) event.classList.add('text-green');
@@ -729,7 +696,7 @@ async function autoDeleteExpiredNews() {
     if (!exists) {
       historyData.push({
         ...news,
-        archivedDate: getLocalDateString() // 使用新的本地日期函數
+        archivedDate: new Date().toISOString().split('T')[0]
       });
     }
   });
@@ -785,6 +752,9 @@ function renderNews() {
   scheduleAutoDelete();
   
   const today = new Date();
+  // 為了計算新增兩天內，將時間歸零
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0,0,0,0);
   
   const sortedNews = [...newsData].sort((a, b) => {
     const dateA = new Date(a.date);
@@ -823,16 +793,20 @@ function renderNews() {
     let cardClass = 'card';
     let titleClass = '';
     
-    // ===== 綠色看板邏輯：新增 或 編輯 兩天內 =====
+    // ===== 新增兩天內的判斷邏輯 =====
     let isNewlyAdded = false;
-    
-    // 檢查「建立日期」或「更新日期」，使用新的 checkIsRecent 函數
-    if (checkIsRecent(news.createdDate) || checkIsRecent(news.updatedDate)) {
+    if (news.createdDate) {
+      const createdDate = new Date(news.createdDate);
+      createdDate.setHours(0,0,0,0);
+      const diffTime = Math.abs(todayMidnight - createdDate);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1) {
         isNewlyAdded = true;
+      }
     }
-    // ==========================================
+    // =============================
     
-    // 設定樣式優先級：綠(新/更新) > 紅(今天) > 紫(重點)
+    // 設定樣式優先級：綠(新增) > 紅(今天) > 紫(重點)
     if (isNewlyAdded) {
         cardClass += ' green';
         titleClass = 'green';
@@ -978,30 +952,26 @@ async function saveNews() {
     return;
   }
   
-  // 取得當前本地日期字串 YYYY-MM-DD
-  const currentDateStr = getLocalDateString();
+  // 如果是新增新聞，記錄今天的日期作為 createdDate
+  // 如果是編輯，保留原有的 createdDate (從 newsData 中查找)
+  let createdDate = '';
   
   if (editingId) {
-    // 編輯模式：
+    // 編輯模式：保留原有的建立日期
     const index = newsData.findIndex(n => n.id == editingId);
     const originalNews = newsData[index];
-    const createdDate = originalNews.createdDate || ''; // 如果原本沒有，就留空
-    // 關鍵修正：確實將今天的日期寫入 updatedDate
-    const updatedDate = currentDateStr; 
+    createdDate = originalNews.createdDate || ''; // 如果原本沒有，就留空
     
     newsData[index] = {
       id: editingId,
-      date, title, note, editor, video, graphic, accent, 
-      createdDate, 
-      updatedDate // 儲存更新日期
+      date, title, note, editor, video, graphic, accent, createdDate
     };
     showNotification('✅ 新聞更新成功！', 'success');
   } else {
-    // 新增模式：
+    // 新增模式：記錄今天
     const maxId = newsData.length > 0 ? Math.max(...newsData.map(n => Number(n.id) || 0)) : 0;
     const newId = maxId + 1;
-    // 關鍵修正：使用本地日期作為建立日期
-    const createdDate = currentDateStr; 
+    createdDate = new Date().toISOString().split('T')[0]; // 格式: YYYY-MM-DD
     
     newsData.push({
       id: newId,
@@ -1010,12 +980,10 @@ async function saveNews() {
     showNotification('✅ 新聞新增成功！', 'success');
   }
   
-  // 先更新畫面，讓使用者立刻看到綠色變化 (解決等待伺服器回應的時間差)
-  renderNews();
-  if(document.getElementById('calendarContainer').style.display !== 'none') renderCalendar();
-  
-  // 再背景儲存
   await saveData();
+  renderNews();
+  // 確保月曆模式也會更新
+  if(document.getElementById('calendarContainer').style.display !== 'none') renderCalendar();
   closeModal('editModal');
 }
 
@@ -1029,7 +997,7 @@ function deleteNews() {
       if (!exists) {
         historyData.push({
           ...newsToDelete,
-          archivedDate: getLocalDateString()
+          archivedDate: new Date().toISOString().split('T')[0]
         });
       }
       
@@ -1232,7 +1200,7 @@ function downloadHistoryExcel() {
   const keyword = document.getElementById('searchKeyword').value.trim();
   
   let fileName = '新聞歷史紀錄';
-  const currentDate = getLocalDateString();
+  const currentDate = new Date().toISOString().split('T')[0];
   
   if (year || month || keyword) fileName += '_篩選結果';
   fileName += `_${currentDate}.xlsx`;
@@ -1526,4 +1494,5 @@ document.head.appendChild(style);
 </script>
 </body>
 </html>
+
 
