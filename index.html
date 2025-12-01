@@ -474,25 +474,34 @@ function getLocalDateString() {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// --- 核心工具：檢查是否為最近 (兩天內：今天或昨天) ---
+// --- 修正核心工具：檢查是否為最近 (兩天內：今天或昨天) ---
+// 修改：移除時間物件計算，改用絕對日期比較，解決伺服器/本地端時區導致的誤差
 function checkIsRecent(dateStr) {
     if (!dateStr) return false;
-    // 使用字串解析而非 Date 物件，避免時區問題
-    const parts = dateStr.split('-');
+    
+    // 容錯處理：如果資料庫存的是完整的 ISO 時間字串 (例如 2024-05-20T10:00:00.000Z)
+    // 我們只取前 10 碼 (YYYY-MM-DD)
+    const cleanDateStr = dateStr.substring(0, 10);
+    
+    // 解析目標日期
+    const parts = cleanDateStr.split('-');
     if (parts.length !== 3) return false;
     
-    // 將紀錄的日期轉為當日午夜
-    const targetDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    // 建構目標日期 (本地時間午夜)
+    const targetYear = parseInt(parts[0], 10);
+    const targetMonth = parseInt(parts[1], 10) - 1; // JS月份從0開始
+    const targetDay = parseInt(parts[2], 10);
+    const targetDate = new Date(targetYear, targetMonth, targetDay);
+
+    // 建構今天日期 (本地時間午夜)
+    const now = new Date();
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // 計算差距天數 (毫秒相減 / 一天的毫秒數)
+    const diffTime = todayDate.getTime() - targetDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
     
-    // 取得今天的午夜
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    // 計算差距天數
-    const diffTime = today - targetDate;
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-    
-    // 如果是 0 (今天) 或 1 (昨天)，則回傳 true
+    // 邏輯：0 = 今天, 1 = 昨天。
     return diffDays >= 0 && diffDays <= 1;
 }
 
@@ -1001,10 +1010,12 @@ async function saveNews() {
     showNotification('✅ 新聞新增成功！', 'success');
   }
   
-  await saveData();
+  // 先更新畫面，讓使用者立刻看到綠色變化 (解決等待伺服器回應的時間差)
   renderNews();
-  // 確保月曆模式也會更新
   if(document.getElementById('calendarContainer').style.display !== 'none') renderCalendar();
+  
+  // 再背景儲存
+  await saveData();
   closeModal('editModal');
 }
 
@@ -1515,3 +1526,4 @@ document.head.appendChild(style);
 </script>
 </body>
 </html>
+
